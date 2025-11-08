@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>现代贪吃蛇 | Snake Game</title>
+  <!-- 引入Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入Font Awesome -->
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  
+  <!-- 配置Tailwind自定义主题 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#165DFF',
+            secondary: '#36CFC9',
+            accent: '#FF7D00',
+            danger: '#FF4D4F', // 红色致命食物颜色
+            dark: '#1D2129',
+            light: '#F2F3F5'
+          },
+          fontFamily: {
+            inter: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      }
+    }
+  </script>
+  
+  <!-- 自定义工具类 -->
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .game-shadow {
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+      }
+      .btn-hover {
+        @apply transition-all duration-300 hover:scale-105 hover:shadow-lg active:scale-95;
+      }
+      .text-glow {
+        text-shadow: 0 0 10px rgba(22, 93, 255, 0.5);
+      }
+      .danger-glow {
+        box-shadow: 0 0 15px rgba(255, 77, 79, 0.6);
+      }
+    }
+  </style>
+  
+  <style>
+    /* 基础样式 */
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: linear-gradient(135deg, #1D2129 0%, #0F1118 100%);
+      overflow-x: hidden;
+    }
+    
+    /* 游戏画布样式 */
+    canvas {
+      display: block;
+      border-radius: 12px;
+      background-color: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+    }
+    
+    /* 动画效果 */
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    
+    .food-pulse {
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes dangerPulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 15px rgba(255, 77, 79, 0.6); }
+      50% { transform: scale(1.1); box-shadow: 0 0 25px rgba(255, 77, 79, 0.8); }
+    }
+    
+    .danger-pulse {
+      animation: dangerPulse 1s infinite;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .animate-fade-in {
+      animation: fadeIn 0.5s ease forwards;
+    }
+    
+    @keyframes foodBlink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    
+    .food-blink {
+      animation: foodBlink 1.5s infinite;
+    }
+    
+    /* 滚动条样式 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+    }
+    
+    ::-webkit-scrollbar-thumb {
+      background: rgba(22, 93, 255, 0.3);
+      border-radius: 3px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(22, 93, 255, 0.5);
+    }
+  </style>
+</head>
+<body class="min-h-screen text-light flex flex-col items-center justify-center p-4 md:p-8">
+  <!-- 游戏标题区域 -->
+  <header class="w-full max-w-4xl mb-6 text-center animate-fade-in">
+    <h1 class="text-[clamp(2rem,5vw,3rem)] font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary mb-2 text-glow">
+      贪吃蛇大作战
+    </h1>
+    <p class="text-gray-400 text-[clamp(0.9rem,2vw,1rem)] max-w-xl mx-auto">
+      吃到<span class="text-accent">橙色食物</span>加分增长，<span class="text-danger">红色食物</span>或<span class="text-secondary">撞到自己</span>结束游戏，<span class="text-light">食物每1.5秒跳动</span>，每10秒红色食物递增（最多5个），边界可穿墙
+    </p>
+  </header>
+  
+  <!-- 游戏主区域 -->
+  <main class="w-full max-w-4xl flex flex-col md:flex-row gap-6 items-center md:items-start justify-center animate-fade-in" style="animation-delay: 0.2s">
+    <!-- 游戏画布区域 -->
+    <div class="relative game-shadow rounded-2xl p-2 md:p-4 bg-dark/40 backdrop-blur-lg border border-primary/20">
+      <canvas id="gameCanvas" width="320" height="320" class="border border-gray-700/50"></canvas>
+      
+      <!-- 游戏开始/结束遮罩 -->
+      <div id="gameOverlay" class="absolute inset-0 flex flex-col items-center justify-center bg-dark/80 backdrop-blur-md rounded-xl z-10 transition-opacity duration-300">
+        <div class="text-center p-6 rounded-xl bg-dark/60 border border-primary/30 max-w-xs">
+          <h2 class="text-[clamp(1.5rem,3vw,2rem)] font-bold text-primary mb-4">贪吃蛇</h2>
+          <p class="text-gray-300 mb-4 text-sm leading-relaxed">
+            <span class="text-accent">橙色</span> = 加分增长<br>
+            <span class="text-danger">红色</span> = 游戏结束<br>
+            <span class="text-secondary">撞自己</span> = 游戏结束<br>
+            <span class="text-light">食物每1.5秒跳动</span><br>
+            每10秒红色食物+1（最多5个）<br>
+            边界可以穿墙
+          </p>
+          <button id="startBtn" class="bg-primary hover:bg-primary/90 text-white font-medium py-2 px-6 rounded-full btn-hover flex items-center gap-2">
+            <i class="fa fa-play"></i> 开始游戏
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 游戏信息和控制区域 -->
+    <div class="w-full md:w-64 flex flex-col gap-6 animate-fade-in" style="animation-delay: 0.4s">
+      <!-- 分数卡片 -->
+      <div class="bg-dark/40 backdrop-blur-lg rounded-2xl p-5 border border-primary/20 game-shadow">
+        <h3 class="text-lg font-semibold text-gray-300 mb-4 flex items-center gap-2">
+          <i class="fa fa-trophy text-accent"></i> 游戏统计
+        </h3>
+        <div class="space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-gray-400">当前分数:</span>
+            <span id="currentScore" class="text-xl font-bold text-primary">0</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-gray-400">最高分:</span>
+            <span id="highScore" class="text-xl font-bold text-secondary">0</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-gray-400">蛇身长度:</span>
+            <span id="snakeLength" class="text-xl font-bold text-light">1</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-gray-400">红色食物数:</span>
+            <span id="dangerFoodCount" class="text-xl font-bold text-danger">0</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 控制按钮 -->
+      <div class="bg-dark/40 backdrop-blur-lg rounded-2xl p-5 border border-primary/20 game-shadow">
+        <h3 class="text-lg font-semibold text-gray-300 mb-4 flex items-center gap-2">
+          <i class="fa fa-gamepad text-accent"></i> 游戏控制
+        </h3>
+        <div class="grid grid-cols-2 gap-3">
+          <button id="pauseBtn" class="bg-gray-700/50 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-lg btn-hover flex items-center justify-center gap-2">
+            <i class="fa fa-pause"></i> 暂停
+          </button>
+          <button id="resetBtn" class="bg-accent hover:bg-accent/90 text-white font-medium py-2 px-4 rounded-lg btn-hover flex items-center justify-center gap-2">
+            <i class="fa fa-refresh"></i> 重置
+          </button>
+          <button id="speedUpBtn" class="bg-secondary hover:bg-secondary/90 text-white font-medium py-2 px-4 rounded-lg btn-hover flex items-center justify-center gap-2">
+            <i class="fa fa-forward"></i> 加速
+          </button>
+          <button id="speedDownBtn" class="bg-gray-600 hover:bg-gray-500 text-white font-medium py-2 px-4 rounded-lg btn-hover flex items-center justify-center gap-2">
+            <i class="fa fa-backward"></i> 减速
+          </button>
+        </div>
+      </div>
+      
+      <!-- 移动控制 (移动端) -->
+      <div class="md:hidden bg-dark/40 backdrop-blur-lg rounded-2xl p-5 border border-primary/20 game-shadow">
+        <h3 class="text-lg font-semibold text-gray-300 mb-4 flex items-center gap-2">
+          <i class="fa fa-mobile text-accent text-2xl"></i> 移动控制
+        </h3>
+        <div class="grid grid-cols-3 gap-2">
+          <div></div>
+          <button id="upBtn" class="bg-primary/80 hover:bg-primary text-white font-medium py-3 rounded-lg btn-hover">
+            <i class="fa fa-arrow-up"></i>
+          </button>
+          <div></div>
+          <button id="leftBtn" class="bg-primary/80 hover:bg-primary text-white font-medium py-3 rounded-lg btn-hover">
+            <i class="fa fa-arrow-left"></i>
+          </button>
+          <button id="downBtn" class="bg-primary/80 hover:bg-primary text-white font-medium py-3 rounded-lg btn-hover">
+            <i class="fa fa-arrow-down"></i>
+          </button>
+          <button id="rightBtn" class="bg-primary/80 hover:bg-primary text-white font-medium py-3 rounded-lg btn-hover">
+            <i class="fa fa-arrow-right"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+  
+  <!-- 页脚区域 -->
+  <footer class="w-full max-w-4xl mt-8 text-center text-gray-500 text-sm animate-fade-in" style="animation-delay: 0.6s">
+    <p>橙色食物加分增长 | 红色食物/撞自己结束游戏 | 食物每1.5秒跳动 | 每10秒红色食物+1（最多5个） | 边界可穿墙</p>
+    <p class="mt-2">© 2025 贪吃蛇大作战 | 现代网页版</p>
+  </footer>
+
+  <script>
+    // 游戏配置
+    const config = {
+      gridSize: 16,                  // 网格大小
+      initialSpeed: 150,              // 初始速度(ms)
+      speedStep: 10,                  // 速度调整步长
+      minSpeed: 50,                   // 最小速度
+      maxSpeed: 300,                  // 最大速度
+      scorePerFood: 10,               // 每个正常食物的分数
+      dangerFoodProbability: 0.2,      // 红色食物出现概率(20%)
+      initialDangerFoodMax: 1,        // 初始红色食物最大数量
+      maxTotalDangerFood: 5,          // 红色食物最大上限
+      dangerFoodIncreaseInterval: 10000, // 红色食物递增间隔(10秒)
+      foodMoveInterval: 1500,         // 食物移动间隔(1.5秒)
+      foodBlinkInterval: 500          // 食物闪烁间隔(提示即将移动)
+    };
+    
+    // 游戏状态
+    const gameState = {
+      snake: [{ x: 8, y: 8 }],        // 蛇的初始位置
+      direction: 'right',             // 初始方向
+      nextDirection: 'right',         // 下一个方向
+      foods: [{                       // 食物列表（包含正常和红色食物）
+        x: 12, 
+        y: 8, 
+        type: 'normal', 
+        lastMovedTime: Date.now()     // 最后移动时间
+      }],
+      score: 0,                       // 当前分数
+      highScore: localStorage.getItem('snakeHighScore') || 0, // 最高分
+      speed: config.initialSpeed,     // 当前速度
+      isRunning: false,               // 是否正在运行
+      isPaused: false,                // 是否暂停
+      gameLoop: null,                 // 游戏循环
+      startTime: null,                // 游戏开始时间
+      currentDangerFoodMax: config.initialDangerFoodMax, // 当前红色食物最大数量
+      lastDangerFoodIncreaseTime: null // 上一次增加红色食物的时间
+    };
+    
+    // 获取DOM元素
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const gameOverlay = document.getElementById('gameOverlay');
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const speedUpBtn = document.getElementById('speedUpBtn');
+    const speedDownBtn = document.getElementById('speedDownBtn');
+    const currentScoreEl = document.getElementById('currentScore');
+    const highScoreEl = document.getElementById('highScore');
+    const snakeLengthEl = document.getElementById('snakeLength');
+    const dangerFoodCountEl = document.getElementById('dangerFoodCount');
+    
+    // 移动端控制按钮
+    const upBtn = document.getElementById('upBtn');
+    const downBtn = document.getElementById('downBtn');
+    const leftBtn = document.getElementById('leftBtn');
+    const rightBtn = document.getElementById('rightBtn');
+    
+    // 设置画布缩放
+    function resizeCanvas() {
+      const container = canvas.parentElement;
+      const size = Math.min(container.clientWidth - 16, 320); // 减去内边距
+      canvas.width = size;
+      canvas.height = size;
+      drawGame(); // 重新绘制游戏
+    }
+    
+    // 初始化游戏
+    function initGame() {
+      // 设置最高分
+      highScoreEl.textContent = gameState.highScore;
+      updateDangerFoodCountDisplay();
+      
+      // 调整画布大小
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+      
+      // 注册事件监听
+      registerEventListeners();
+      
+      // 初始绘制
+      drawGame();
+    }
+    
+    // 注册事件监听
+    function registerEventListeners() {
+      // 键盘控制
+      document.addEventListener('keydown', handleKeyPress);
+      
+      // 按钮控制
+      startBtn.addEventListener('click', startGame);
+      pauseBtn.addEventListener('click', togglePause);
+      resetBtn.addEventListener('click', resetGame);
+      speedUpBtn.addEventListener('click', speedUp);
+      speedDownBtn.addEventListener('click', speedDown);
+      
+      // 移动端控制
+      upBtn.addEventListener('click', () => changeDirection('up'));
+      downBtn.addEventListener('click', () => changeDirection('down'));
+      leftBtn.addEventListener('click', () => changeDirection('left'));
+      rightBtn.addEventListener('click', () => changeDirection('right'));
+    }
+    
+    // 处理键盘按键
+    function handleKeyPress(e) {
+      if (!gameState.isRunning && !gameState.isPaused) {
+        startGame();
+      }
+      
+      switch(e.key) {
+        case 'ArrowUp':
+          changeDirection('up');
+          break;
+        case 'ArrowDown':
+          changeDirection('down');
+          break;
+        case 'ArrowLeft':
+          changeDirection('left');
+          break;
+        case 'ArrowRight':
+          changeDirection('right');
+          break;
+        case ' ': // 空格键暂停/继续
+          togglePause();
+          break;
+        case 'r': // R键重置
+          resetGame();
+          break;
+      }
+    }
+    
+    // 改变方向
+    function changeDirection(newDirection) {
+      // 防止180度转弯
+      const oppositeDirections = {
+        up: 'down',
+        down: 'up',
+        left: 'right',
+        right: 'left'
+      };
+      
+      if (newDirection !== oppositeDirections[gameState.direction]) {
+        gameState.nextDirection = newDirection;
+      }
+    }
+    
+    // 开始游戏
+    function startGame() {
+      if (gameState.isRunning) return;
+      
+      gameState.isRunning = true;
+      gameState.isPaused = false;
+      gameState.startTime = Date.now();
+      gameState.lastDangerFoodIncreaseTime = Date.now();
+      gameOverlay.style.opacity = '0';
+      
+      // 启动游戏循环
+      if (!gameState.gameLoop) {
+        gameState.gameLoop = setInterval(gameUpdate, gameState.speed);
+      }
+    }
+    
+    // 暂停/继续游戏
+    function togglePause() {
+      if (!gameState.isRunning) return;
+      
+      gameState.isPaused = !gameState.isPaused;
+      
+      if (gameState.isPaused) {
+        clearInterval(gameState.gameLoop);
+        gameState.gameLoop = null;
+        gameOverlay.innerHTML = `
+          <div class="text-center p-6 rounded-xl bg-dark/60 border border-primary/30 max-w-xs">
+            <h2 class="text-[clamp(1.5rem,3vw,2rem)] font-bold text-primary mb-4">游戏暂停</h2>
+            <p class="text-gray-300 mb-4 text-sm leading-relaxed">
+              <span class="text-accent">橙色</span> = 加分增长<br>
+              <span class="text-danger">红色</span> = 游戏结束<br>
+              <span class="text-secondary">撞自己</span> = 游戏结束<br>
+              <span class="text-light">食物每1.5秒跳动</span><br>
+              每10秒红色食物+1（最多5个）
+            </p>
+            <button id="resumeBtn" class="bg-primary hover:bg-primary/90 text-white font-medium py-2 px-6 rounded-full btn-hover flex items-center gap-2">
+              <i class="fa fa-play"></i> 继续游戏
+            </button>
+          </div>
+        `;
+        gameOverlay.style.opacity = '1';
+        
+        // 继续按钮事件
+        document.getElementById('resumeBtn').addEventListener('click', togglePause);
+      } else {
+        gameOverlay.style.opacity = '0';
+        gameState.gameLoop = setInterval(gameUpdate, gameState.speed);
+      }
+    }
+    
+    // 重置游戏
+    function resetGame() {
+      // 停止游戏循环
+      if (gameState.gameLoop) {
+        clearInterval(gameState.gameLoop);
+        gameState.gameLoop = null;
+      }
+      
+      // 重置游戏状态
+      gameState.snake = [{ x: 8, y: 8 }];
+      gameState.direction = 'right';
+      gameState.nextDirection = 'right';
+      gameState.foods = [{
+        x: 12,
+        y: 8,
+        type: 'normal',
+        lastMovedTime: Date.now()
+      }];
+      gameState.score = 0;
+      gameState.speed = config.initialSpeed;
+      gameState.isRunning = false;
+      gameState.isPaused = false;
+      gameState.startTime = null;
+      gameState.currentDangerFoodMax = config.initialDangerFoodMax;
+      gameState.lastDangerFoodIncreaseTime = null;
+      
+      // 更新UI
+      updateScoreDisplay();
+      updateDangerFoodCountDisplay();
+      
+      // 显示开始界面
+      gameOverlay.innerHTML = `
+        <div class="text-center p-6 rounded-xl bg-dark/60 border border-primary/30 max-w-xs">
+          <h2 class="text-[clamp(1.5rem,3vw,2rem)] font-bold text-primary mb-4">贪吃蛇</h2>
+          <p class="text-gray-300 mb-4 text-sm leading-relaxed">
+            <span class="text-accent">橙色</span> = 加分增长<br>
+            <span class="text-danger">红色</span> = 游戏结束<br>
+            <span class="text-secondary">撞自己</span> = 游戏结束<br>
+            <span class="text-light">食物每1.5秒跳动</span><br>
+            每10秒红色食物+1（最多5个）<br>
+            边界可以穿墙
+          </p>
+          <button id="startBtn" class="bg-primary hover:bg-primary/90 text-white font-medium py-2 px-6 rounded-full btn-hover flex items-center gap-2">
+            <i class="fa fa-play"></i> 开始游戏
+          </button>
+        </div>
+      `;
+      gameOverlay.style.opacity = '1';
+      
+      // 重新绑定开始按钮事件
+      document.getElementById('startBtn').addEventListener('click', startGame);
+      
+      // 重新绘制游戏
+      drawGame();
+    }
+    
+    // 加速游戏
+    function speedUp() {
+      if (gameState.speed > config.minSpeed) {
+        gameState.speed -= config.speedStep;
+        
+        // 如果游戏正在运行，更新游戏循环
+        if (gameState.isRunning && !gameState.isPaused) {
+          clearInterval(gameState.gameLoop);
+          gameState.gameLoop = setInterval(gameUpdate, gameState.speed);
+        }
+      }
+    }
+    
+    // 减速游戏
+    function speedDown() {
+      if (gameState.speed < config.maxSpeed) {
+        gameState.speed += config.speedStep;
+        
+        // 如果游戏正在运行，更新游戏循环
+        if (gameState.isRunning && !gameState.isPaused) {
+          clearInterval(gameState.gameLoop);
+          gameState.gameLoop = setInterval(gameUpdate, gameState.speed);
+        }
+      }
+    }
+    
+    // 生成食物（正常或红色致命食物）- 确保不与蛇身和其他食物重叠
+    function generateFood(foodType = null) {
+      let food;
+      const type = foodType || (Math.random() < config.dangerFoodProbability ? 'danger' : 'normal');
+      
+      // 确保食物不会生成在蛇身上或其他食物位置
+      do {
+        food = {
+          x: Math.floor(Math.random() * config.gridSize),
+          y: Math.floor(Math.random() * config.gridSize),
+          type: type,
+          lastMovedTime: Date.now()
+        };
+      } while (
+        // 检查是否与蛇身重叠
+        gameState.snake.some(segment => segment.x === food.x && segment.y === food.y) ||
+        // 检查是否与其他食物重叠
+        gameState.foods.some(existingFood => existingFood.x === food.x && existingFood.y === food.y)
+      );
+      
+      return food;
+    }
+    
+    // 移动单个食物到新位置
+    function moveFood(food) {
+      const newFoodPos = generateFood(food.type);
+      food.x = newFoodPos.x;
+      food.y = newFoodPos.y;
+      food.lastMovedTime = Date.now();
+      return food;
+    }
+    
+    // 检查并添加新食物
+    function checkAndAddFood() {
+      const currentDangerCount = gameState.foods.filter(f => f.type === 'danger').length;
+      
+      // 如果红色食物数量小于当前上限，有概率生成新的红色食物
+      if (currentDangerCount < gameState.currentDangerFoodMax && Math.random() < 0.3) {
+        const newDangerFood = generateFood('danger');
+        gameState.foods.push(newDangerFood);
+        updateDangerFoodCountDisplay();
+      }
+      
+      // 确保至少有一个正常食物
+      const hasNormalFood = gameState.foods.some(f => f.type === 'normal');
+      if (!hasNormalFood) {
+        const newNormalFood = generateFood('normal');
+        gameState.foods.push(newNormalFood);
+      }
+    }
+    
+    // 检查并增加红色食物数量上限
+    function checkDangerFoodIncrease() {
+      if (!gameState.startTime) return;
+      
+      const currentTime = Date.now();
+      const timeSinceLastIncrease = currentTime - gameState.lastDangerFoodIncreaseTime;
+      
+      // 每10秒增加一次，且不超过最大上限
+      if (timeSinceLastIncrease >= config.dangerFoodIncreaseInterval && 
+          gameState.currentDangerFoodMax < config.maxTotalDangerFood) {
+        gameState.currentDangerFoodMax += 1;
+        gameState.lastDangerFoodIncreaseTime = currentTime;
+        
+        // 可能需要立即生成一个新的红色食物
+        checkAndAddFood();
+      }
+    }
+    
+    // 处理边界穿墙逻辑
+    function handleBoundaryWrap(head) {
+      // 左右边界穿墙
+      if (head.x < 0) {
+        head.x = config.gridSize - 1;
+      } else if (head.x >= config.gridSize) {
+        head.x = 0;
+      }
+      
+      // 上下边界穿墙
+      if (head.y < 0) {
+        head.y = config.gridSize - 1;
+      } else if (head.y >= config.gridSize) {
+        head.y = 0;
+      }
+      
+      return head;
+    }
+    
+    // 检查蛇头是否撞到自身
+    function checkSelfCollision(head) {
+      // 遍历蛇身（从索引1开始，跳过蛇头）
+      for (let i = 1; i < gameState.snake.length; i++) {
+        if (head.x === gameState.snake[i].x && head.y === gameState.snake[i].y) {
+          return true; // 撞到自己
+        }
+      }
+      return false;
+    }
+    
+    // 更新分数显示
+    function updateScoreDisplay() {
+      currentScoreEl.textContent = gameState.score;
+      snakeLengthEl.textContent = gameState.snake.length;
+      
+      // 更新最高分
+      if (gameState.score > gameState.highScore) {
+        gameState.highScore = gameState.score;
+        highScoreEl.textContent = gameState.highScore;
+        localStorage.setItem('snakeHighScore', gameState.highScore);
+      }
+    }
+    
+    // 更新红色食物数量显示
+    function updateDangerFoodCountDisplay() {
+      const count = gameState.foods.filter(f => f.type === 'danger').length;
+      dangerFoodCountEl.textContent = count;
+    }
+    
+    // 游戏更新循环
+    function gameUpdate() {
+      const currentTime = Date.now();
+      
+      // 1. 处理食物移动（每1.5秒移动一次未被吃的食物）
+      gameState.foods = gameState.foods.map(food => {
+        if (currentTime - food.lastMovedTime >= config.foodMoveInterval) {
+          return moveFood(food);
+        }
+        return food;
+      });
+      
+      // 2. 检查红色食物数量是否需要递增
+      checkDangerFoodIncrease();
+      
+      // 3. 更新蛇的方向
+      gameState.direction = gameState.nextDirection;
+      
+      // 4. 创建新的蛇头并移动
+      let head = { ...gameState.snake[0] };
+      switch(gameState.direction) {
+        case 'up':
+          head.y--;
+          break;
+        case 'down':
+          head.y++;
+          break;
+        case 'left':
+          head.x--;
+          break;
+        case 'right':
+          head.x++;
+          break;
+      }
+      
+      // 5. 处理边界穿墙
+      head = handleBoundaryWrap(head);
+      
+      // 6. 检查是否撞到自己
+      if (checkSelfCollision(head)) {
+        gameOver('撞到自己，游戏结束！');
+        return;
+      }
+      
+      // 7. 将新蛇头添加到蛇的前面
+      gameState.snake.unshift(head);
+      
+      // 8. 检查是否吃到食物
+      let foodEatenIndex = -1;
+      let ateDangerFood = false;
+      
+      gameState.foods.forEach((food, index) => {
+        if (head.x === food.x && head.y === food.y) {
+          foodEatenIndex = index;
+          ateDangerFood = food.type === 'danger';
+        }
+      });
+      
+      if (foodEatenIndex !== -1) {
+        // 移除被吃掉的食物
+        gameState.foods.splice(foodEatenIndex, 1);
+        updateDangerFoodCountDisplay();
+        
+        // 如果吃到红色食物，游戏结束
+        if (ateDangerFood) {
+          gameOver('吃到红色食物，游戏结束！');
+          return;
+        }
+        
+        // 增加分数
+        gameState.score += config.scorePerFood;
+        updateScoreDisplay();
+        
+        // 加速游戏
+        if (gameState.speed > config.minSpeed) {
+          gameState.speed -= 2;
+          clearInterval(gameState.gameLoop);
+          gameState.gameLoop = setInterval(gameUpdate, gameState.speed);
+        }
+        
+        // 生成新的正常食物
+        const newNormalFood = generateFood('normal');
+        gameState.foods.push(newNormalFood);
+        
+        // 有概率生成新的红色食物
+        checkAndAddFood();
+      } else {
+        // 没有吃到食物，移除蛇尾
+        gameState.snake.pop();
+      }
+      
+      // 9. 检查并添加新食物（确保食物数量合理）
+      checkAndAddFood();
+      
+      // 10. 绘制游戏
+      drawGame();
+    }
+    
+    // 游戏结束
+    function gameOver(message = '游戏结束!') {
+      // 停止游戏循环
+      clearInterval(gameState.gameLoop);
+      gameState.gameLoop = null;
+      gameState.isRunning = false;
+      
+      // 更新最高分
+      if (gameState.score > gameState.highScore) {
+        gameState.highScore = gameState.score;
+        localStorage.setItem('snakeHighScore', gameState.highScore);
+        highScoreEl.textContent = gameState.highScore;
+      }
+      
+      // 显示游戏结束界面
+      gameOverlay.innerHTML = `
+        <div class="text-center p-6 rounded-xl bg-dark/60 border border-primary/30 max-w-xs animate-fade-in">
+          <h2 class="text-[clamp(1.5rem,3vw,2rem)] font-bold text-danger mb-2">${message}</h2>
+          <p class="text-gray-300 mb-2">你的得分: <span class="text-primary font-bold">${gameState.score}</span></p>
+          <p class="text-gray-300 mb-2">蛇身长度: <span class="text-light font-bold">${gameState.snake.length}</span></p>
+          <p class="text-gray-300 mb-4">红色食物数: <span class="text-danger font-bold">${gameState.foods.filter(f => f.type === 'danger').length}</span></p>
+          <p class="text-gray-400 mb-6">最高分: <span class="text-secondary font-bold">${gameState.highScore}</span></p>
+          <button id="restartBtn" class="bg-primary hover:bg-primary/90 text-white font-medium py-2 px-6 rounded-full btn-hover flex items-center gap-2">
+            <i class="fa fa-refresh"></i> 重新开始
+          </button>
+        </div>
+      `;
+      gameOverlay.style.opacity = '1';
+      
+      // 重新开始按钮事件
+      document.getElementById('restartBtn').addEventListener('click', resetGame);
+    }
+    
+    // 绘制游戏
+    function drawGame() {
+      // 清除画布
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // 计算单元格大小
+      const cellSize = canvas.width / config.gridSize;
+      
+      // 绘制网格背景
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+      ctx.lineWidth = 1;
+      
+      for (let i = 0; i <= config.gridSize; i++) {
+        // 水平线
+        ctx.beginPath();
+        ctx.moveTo(0, i * cellSize);
+        ctx.lineTo(canvas.width, i * cellSize);
+        ctx.stroke();
+        
+        // 垂直线
+        ctx.beginPath();
+        ctx.moveTo(i * cellSize, 0);
+        ctx.lineTo(i * cellSize, canvas.height);
+        ctx.stroke();
+      }
+      
+      // 绘制蛇
+      gameState.snake.forEach((segment, index) => {
+        // 蛇头
+        if (index === 0) {
+          ctx.fillStyle = '#165DFF'; // 主色
+          ctx.shadowColor = 'rgba(22, 93, 255, 0.5)';
+          ctx.shadowBlur = 10;
+        } else {
+          // 蛇身，渐变颜色
+          const alpha = 0.3 + (index / gameState.snake.length) * 0.7;
+          ctx.fillStyle = `rgba(54, 207, 201, ${alpha})`; // 辅助色
+          ctx.shadowColor = 'transparent';
+        }
+        
+        // 绘制蛇的身体部分
+        ctx.fillRect(
+          segment.x * cellSize + 2,
+          segment.y * cellSize + 2,
+          cellSize - 4,
+          cellSize - 4
+        );
+        
+        // 绘制边框
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(
+          segment.x * cellSize + 2,
+          segment.y * cellSize + 2,
+          cellSize - 4,
+          cellSize - 4
+        );
+      });
+      
+      // 绘制所有食物
+      gameState.foods.forEach(food => {
+        const currentTime = Date.now();
+        const timeSinceLastMove = currentTime - food.lastMovedTime;
+        
+        // 食物即将移动时添加闪烁效果
+        if (timeSinceLastMove > config.foodMoveInterval - config.foodBlinkInterval) {
+          ctx.globalAlpha = 0.5 + Math.sin(currentTime / 100) * 0.3;
+        }
+        
+        if (food.type === 'danger') {
+          // 绘制红色致命食物
+          ctx.fillStyle = '#FF4D4F'; // 危险色
+          ctx.shadowColor = 'rgba(255, 77, 79, 0.6)';
+          ctx.shadowBlur = 15;
+          
+          // 绘制带闪烁效果的圆形食物
+          ctx.beginPath();
+          ctx.arc(
+            (food.x * cellSize) + cellSize / 2,
+            (food.y * cellSize) + cellSize / 2,
+            (cellSize - 4) / 2,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+        } else {
+          // 绘制正常橙色食物
+          ctx.fillStyle = '#FF7D00'; // 强调色
+          ctx.shadowColor = 'rgba(255, 125, 0, 0.6)';
+          ctx.shadowBlur = 15;
+          
+          // 绘制圆形食物
+          ctx.beginPath();
+          ctx.arc(
+            (food.x * cellSize) + cellSize / 2,
+            (food.y * cellSize) + cellSize / 2,
+            (cellSize - 6) / 2,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+        }
+        
+        // 重置透明度和阴影
+        ctx.globalAlpha = 1;
+        ctx.shadowColor = 'transparent';
+      });
+    }
+    
+    // 初始化游戏
+    window.addEventListener('load', initGame);
+  </script>
+</body>
+</html>
